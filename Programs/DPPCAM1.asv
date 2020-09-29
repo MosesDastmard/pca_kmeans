@@ -1,0 +1,177 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Disjoint Probabilistic Principal Component Analysis M1%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% Maurizio Vichi
+% April 2013
+%
+% Model 1
+%
+% X = YCV' + E
+% with covariance structure
+% Sx = VCCV' + s2 I
+% C =(V'V)^-0.5
+%
+% subject to
+% A=VC where
+% CV'VC = I
+
+
+% and V is binary and row stochastic
+% s2 = variance of the error
+% C = (K x K) diagonal matrix
+
+% Maximum likelihood estimation by EM
+%
+%
+% Maximize Likelihood -n/2 ( J*ln(2Pi) + ln(|Sx|) + tr(Sx^-1 S) )
+
+%
+function [Vdppca,Adppca, Ydppca fdppca, indppca]=DPPCAM1(X,K,Rndstart)
+
+% X (n X J) data matrix
+% S = (1/n)*X'*Jm*X; observed sample covariance matrix 
+% Jm centering matrix
+% V (J x K) membership matrix for clustering variables
+% n = numenr of objects
+% J = number of variables
+% K = numberr of 
+
+%
+% initialization
+%
+maxiter=100;
+% convergence tollerance
+eps=0.0000000001;
+
+[n,J]=size(X);
+VC=eye(K);
+opts.disp=0;
+
+% centring matrix
+Jm=eye(n)-(1/n)*ones(n);
+
+% compute the observed var-covar matrix 
+S=(1/n)*X'*Jm*X;
+
+% Standardize data
+Xs=Jm*X*diag(diag(S))^-0.5;
+
+st=sum(sum(Xs.^2));
+
+%um=ones(K,1);
+
+for loop=1:Rndstart
+
+    V=randPU(J,K);
+    rnV=sqrt(1./sum(V));
+    it=0;
+    JJ=[1:J]';
+    A=zeros(J,K);
+    zJ=zeros(J,1);
+ 
+    % initial A (A0)
+    %
+    C=diag(rnV);
+    A0=V*C;
+
+    % intial s2
+    %
+    [AA, BB]=eig(S);
+    s2=(1/(n-K))*sum(diag(BB(K+1:J,K+1:J)));
+    %
+    % intial Sx
+    Sx = A0*A0' + s2*eye(J);
+    
+    f0 = (-n/2)*( J*log(pi) + log(det(Sx)) + trace(inv(Sx)*S) );
+    fmax=-inf;
+
+    % iteration phase
+    fdif=2*eps;
+    while fdif > eps | it>=maxiter,
+        it=it+1;
+           
+        % update V and A
+        for j=1:J
+            posmax=JJ(V(j,:)==1);
+            for g=1:K
+                V(j,:)=VC(g,:);
+                xx=V(:,g);           % new position into a class of V
+                xxx=V(:,posmax);     % current optimal class of V
+                Jxx=[JJ(xx==1)];
+                Jxxx=[JJ(xxx==1)];
+                Sg=(1./n)*Xs(:,Jxx)'*Xs(:,Jxx);
+                S0g=(1./n)*Xs(:,Jxxx)'*Xs(:,Jxxx);
+                if sum(xx)>1
+                     [a,c]=eigs(Sg,1,'lm',opts);
+                     
+                      A(:,g)=zJ;
+                      A(Jxx,g)=a*sqrt(c);
+                      rs=size(Sg,1)-c;
+                else
+                      A(:,g)=zJ;
+                      A(Jxx,g)=1;
+                end
+                if sum(xxx)>1
+                      [aa,cc]=eigs(S0g,1,'lm',opts);
+                      rs=size(S0g,1)-cc;
+                      A(:,posmax)=zJ;  
+                      A(Jxxx,posmax)=aa*sqrt(cc-rs);
+                else
+                      A(:,posmax)=zJ;  
+                      A(Jxxx,posmax)=1;
+                      rs=0;
+                end            
+                Sx = A*A' + s2*eye(J);
+                f =(-n/2)*( J*log(pi) + log(det(Sx)) + trace(inv(Sx)*S) );
+                if f > fmax
+                    fmax=f;
+                    posmax=g;
+                    A0=A;
+                else
+                    A=A0;
+                end
+            end
+            V(j,:)=VC(posmax,:);
+        end
+        
+        Sx = A*A' + s2*eye(J);        
+        f = (-n/2)*( J*log(pi) + log(det(Sx)) + trace(inv(Sx)*S) );
+        fdif = f-f0;
+        
+        if fdif > eps 
+            f0=f; A0=A; 
+        else
+            break
+        end
+    end
+  disp(sprintf('DPCA: Loop=%g, Explained variance=%g, iter=%g, fdif=%g',loop,f, it,fdif))   
+       if loop==1
+            Vdppca=V;
+            Adppca=A;
+            Ydppca=Xs*Adppca;
+            fdppca=f;
+            loopdppca=1;
+            indppca=it;
+            fdifo=fdif;
+        end
+   if f > fdppca
+       Vdppca=V;
+       fdppca=f;
+       Adppca=A;
+       Ydppca=Xs*Adppca;
+       loopdppca=loop;
+       indppca=it;
+       fdifo=fdif;
+   end
+end
+% sort the final solution in descend order of variance
+varYdppca=var(Ydppca,1);
+[c,ic]=sort(varYdppca, 'descend');
+Adppca=Adppca(:,ic);
+Vdppca=Vdppca(:,ic);
+Ydppca=Ydppca(:,ic); 
+
+disp(sprintf('DPCA (Final): Explained variance=%g, looppdpca=%g, iter=%g, fdif=%g',fdppca, loopdppca, indppca,fdifo))
+
+ 

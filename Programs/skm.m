@@ -1,0 +1,103 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% K-means algorithm for dissimilarity data %
+% Square K-means                           %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+% Vichi Maurizio 
+% version 10.10.2012
+% model ||X-U'(Dw+Db)U||^2
+
+function [loopOtt,UOtt,fOtt,iterOtt]=skm(D,K,Rndstart);
+%
+% n = number of objects
+% J = number of variables
+% K = number of clusters of the partition
+%
+% maxiter=max number of iterations
+% D = matrix of (dis)similarities
+% Rndstart = number of random starts
+% 
+% initialization
+%
+maxiter=100;
+
+n=size(D,1);
+epsilon=0.000001;
+ID=eye(K);
+% total sum of squares
+%
+ts=sum(sum(D.^2));
+
+% find the best solution in a fixed number of random start partitions
+%seed=200;            
+%rand('state',seed)    %
+for loop=1:Rndstart
+    U0=randPU(n,K);
+    su=sum(U0);
+    Dm0=diag(1./su)*U0'*D*U0*diag(1./su);
+    f0=trace((D-U0*Dm0*U0')'*(D-U0*Dm0*U0'))/ts;
+
+
+    for iter=1:maxiter
+    %
+    % allocation STEP (objects to classes) 
+    U=zeros(n,K);
+    for i=1:n
+        for v=1:K
+           ui=U0(i,:);
+           U0(i,:)=ID(v,:);
+             t(v)=sum((D(i,:)-Dm0(v,:)*U0').^2)/ts;
+           U0(i,:)=ui;
+        end
+        [val,pos]=min(t);
+        U(i,pos)=1;
+    end
+     
+    su=sum(U);
+    while sum(su==0)>0,
+       [m,p1]=min(su);
+       [m,p2]=max(su);
+       ind=find(U(:,p2));
+       ind=ind(1:floor(su(p2)/2));
+       U(ind,p1)=1;
+       U(ind,p2)=0;
+       su=sum(U);
+    end 
+   % Compute Db+DW
+   
+   Dm=diag(1./su)*U'*D*U*diag(1./su);
+
+    % compute the objective function
+    f1=trace((D-U*Dm*U')'*(D-U*Dm*U'))/ts;
+
+    %
+    % stopping rule
+	%
+    fdif = f0 - f1;
+    if fdif > epsilon 
+        Dm0=Dm;
+        U0=U;
+        f0=f1;
+    else
+        break
+    end
+    end    
+    if loop==1
+        UOtt=U;
+        fOtt=f1;
+        loopOtt=1;
+        iterOtt=1;
+        DmOtt=Dm;
+    end
+  disp(sprintf('k-means D: loop=%g, f=%g, iter=%g',loop,f1,iter))
+   if f1 < fOtt
+        UOtt=U;
+        fOtt=f1;
+        loopOtt=loop;
+        iterOtt=iter;
+       DmOtt=Dm;
+   end
+end
+
+disp(sprintf('k-means D (Final): loopOtt=%g, fOtt=%g, iterOtt=%g',loopOtt,fOtt,iterOtt))

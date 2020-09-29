@@ -1,0 +1,260 @@
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Simulataneous Clustering of objects & % 
+% Disjoint Principal Component Analysis %
+% with orthogonal Components            %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+%  Maurizio Vichi May 2013
+%
+% X (n X J) data matrix
+% V (J x Q) membership matrix for clustering variables
+% U (n x k) membership matrix for clustering objects
+%
+% model X = UYmV'B + E
+% 
+% problem: min||X-UYmV'B||^2
+% 
+% being ||X||^2 = ||X-UYmV'B||^2 + ||UYmV'B||^2
+%
+% equivalent problem
+%
+% problem maximize ||UYmV'B||^2
+% subject to
+% V binary and row stochastic
+% U binary and row stochastic
+% B Diagonal matrix
+% Y orthogonal
+%
+function [XX,Vcdpcao,Ucdpcao,Acdpcao, Ccdpcao, Ycdpcao,fcdpcao,incdpcao]=CDPCAO(X, K, Q, Rndstart)
+
+
+%
+% initialization
+%
+maxiter=100;
+% convergence tollerance
+eps=0.0000000001;
+
+opts.disp=0;
+VC=eye(Q);
+
+[n,J]=size(X);
+
+
+% Standardize data
+Xs=zscore(X,1);
+
+% compute var-covar matrix 
+S=cov(Xs,1);
+
+st=(1./n)*sum(sum(Xs.^2));
+
+
+for loop=1:Rndstart
+    V=randPU(J,Q);
+    U=randPU(n,K);
+    su=sum(U);
+    it=0;
+    JJ=[1:J]';
+    A=zeros(J,Q);
+    zJ=zeros(J,1);
+    
+    % initial centroid matrix Xmean 
+    Xmean = diag(1./su)*U'*Xs;
+    
+    % initial A
+    
+    for g=1:Q
+        ibCg=V(:,g); 
+        JCg=[JJ(ibCg==1)];
+        Sg=S(JCg,JCg);
+        if sum(ibCg)>1
+                [a,c]=eigs(Sg,1,'lm',opts);
+                A(JCg,g)=a;
+            else
+                A(JCg,g)=1;
+            end
+    end
+    
+    % initial Y
+     Y=Xs*A;
+   
+    % initial C
+    [C,Le]=eig(cov(Y,1));
+    
+    Ymean=Xmean*A*C;
+    f0=trace((1./n)*Ymean'*(U'*U)*Ymean);
+    fmax=0;
+
+% iteration phase
+    fdif=2*eps;
+    while fdif > eps || it>=maxiter,
+        it=it+1;
+   
+      % given Ymean and A update U
+      Y=Xs*A*C;
+      U=zeros(n,K);
+        for i=1:n
+            mindif=sum((Y(i,:)-Ymean(1,:)).^2);
+            posmin=1;
+            for j=2:K
+                dif=sum((Y(i,:)-Ymean(j,:)).^2);
+                if dif < mindif
+                    mindif=dif;
+                    posmin=j;
+                end 
+            end
+            U(i,posmin)=1;
+        end
+     %
+        su=sum(U);
+        while sum(su==0)>0,
+            [~,p1]=min(su);
+            [~,p2]=max(su);
+            ind=find(U(:,p2));
+            ind=ind(1:floor(su(p2)/2));
+            U(ind,p1)=1;
+            U(ind,p2)=0;
+            su=sum(U);
+        end 
+        
+        % given U and A compute Xmean (compute centroids)
+        Xmean = diag(1./su)*U'*Xs;
+        
+        % given U and Ymean update  A=BV
+        for j=1:J
+            posmax=JJ(V(j,:)==1);
+            for g=1:Q
+                V(j,:)=VC(g,:);
+                ibCg=V(:,g);           % new class of V
+                ibCpm=V(:,posmax);     % old class of V
+                JCg=[JJ(ibCg==1)];
+                JCpm=[JJ(ibCpm==1)];
+                Sg=S(JCg,JCg);
+                S0g=S(JCpm,JCpm);
+                if sum(ibCg)>1
+                     [a,c]=eigs(Sg,1,'lm',opts);
+                      if sum(a)<0
+                          a=-a;
+                      end
+                      A(:,g)=zJ;                      
+                      A(JCg,g)=a;
+                else
+                      A(:,g)=zJ;
+                      A(JCg,g)=1;
+                end
+                if sum(ibCpm)>1
+                     [aa,cc]=eigs(S0g,1,'lm',opts);
+                     if sum(aa)<0
+                        aa=-aa;
+                     end
+
+                     A(:,posmax)=zJ;  
+                     A(JCpm,posmax)=aa;
+                else
+                     A(:,posmax)=zJ;  
+                     A(JCpm,posmax)=1;
+                end
+                
+                Y=Xs*A; 
+                [C,Le]=eig(cov(Y,1));
+                % update Ymean
+                Ymean = Xmean*A*C;
+                f=trace((1./n)*Ymean'*(U'*U)*Ymean);
+                if f > fmax
+                    fmax=f;
+                    posmax=g;
+                    A0=A;
+                else
+                    A=A0;
+                end
+            end
+            V(j,:)=VC(posmax,:);
+        end
+        
+        % given A Ymed update C       
+        Y=Xs*A; 
+        [C,Le]=eig(cov(Y,1));
+        % update Ymean
+        Ymean = Xmean*A*C;
+        f=trace((1./n)*Ymean'*(U'*U)*Ymean);
+        fdif = f-f0;
+        
+        if fdif > eps 
+            f0=f;fmax=f0; A0=A; 
+        else
+            break
+        end
+    end
+  disp(sprintf('CDPCAO: Loop=%g, Explained variance=%g, iter=%g, fdif=%g',loop,f./st*100, it,fdif))   
+       if loop==1
+            Vcdpcao=V;
+            Ucdpcao=U;
+            Acdpcao=A;
+            Ccdpcao=C;
+            Ycdpcao=Xs*Acdpcao*Ccdpcao;
+            fcdpcao=f;
+            loopcdpcao=1;
+            incdpcao=it;
+            fdifo=fdif;
+        end
+   if f > fcdpcao
+       Vcdpcao=V;
+       Ucdpcao=U;
+       fcdpcao=f;
+       Acdpcao=A;
+       Ccdpcao=C;
+       Ycdpcao=Xs*Acdpcao*Ccdpcao;
+       loopcdpcao=loop;
+       incdpcao=it;
+       fdifo=fdif;
+   end
+end
+XX=X;
+% sort clusters of variables contiguously
+v=Vcdpcao*[1:Q]';
+[~,ic]=sort(v);
+Vcdpcao=Vcdpcao(ic,:);
+Acdpcao=Acdpcao(ic,:);
+% sort withn cluster of variables in ascending sum(XX)
+%scx=sum(var(XX));
+%su=sum(Vcdpcao);
+%sc=zeros(Q+1,1);
+%for q=1:Q
+%    sc(q+1)=sc(q)+su(q);
+%    [~,ic]=sort(scx(sc(q)+1:sc(q+1)));
+%    XX(:,sc(q)+1:sc(q+1))=XX(:,sc(q)+ic);
+%end
+% sort clusters of objects in descending order of variance
+[~,ic]=sort(diag(Ucdpcao'*Ucdpcao), 'descend');
+Ucdpcao=Ucdpcao(:,ic);
+% sort clusters of objects contiguously 
+u=Ucdpcao*[1:K]';
+[~,ic]=sort(u);
+Ucdpcao=Ucdpcao(ic,:);
+XX=XX(ic,:);
+Ycdpcao=Ycdpcao(ic,:);
+% sort withn cluster of objects in ascending sum(XX')
+srx=sum(XX');
+su=sum(Ucdpcao);
+sc=zeros(K+1,1);
+for k=1:K
+    sc(k+1)=sc(k)+su(k);
+    [~,ic]=sort(srx(sc(k)+1:sc(k+1)));
+    XX(sc(k)+1:sc(k+1),:)=XX(sc(k)+ic,:);
+    Ycdpcao(sc(k)+1:sc(k+1),:)=Ycdpcao(sc(k)+ic,:);
+end
+
+% sort clusters of variables in descend order of variance
+%varYcdpcao=var(Ycdpcao,1);
+%[~,ic]=sort(varYcdpcao, 'descend');
+%Acdpcao=Acdpcao(:,ic);
+%Ccdpcao=Ccdpcao(:,ic);
+%Vcdpcao=Vcdpcao(:,ic);
+%Ycdpcao=Ycdpcao(:,ic); 
+%
+
+
+disp(sprintf('CDPCAO (Final): Percentage Explained Variance=%g, loopdpcao=%g, iter=%g, fdif=%g',fcdpcao./st*100, loopcdpcao, incdpcao,fdifo))
+
+ 

@@ -1,0 +1,11 @@
+
+function  B=NNW(X,XM)
+
+[n,J]=size(X);
+pinv(XM)
+   b=pinv(MAT'*MAT)*MAT'*Y(:); 
+   B=diag(b);
+%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+  

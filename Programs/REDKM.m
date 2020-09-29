@@ -1,0 +1,163 @@
+% %%%%%%%%%%%%%%%%%%%%%%
+% Reduced K-means      % 
+%                      %
+%%%%%%%%%%%%%%%%%%%%%%%%
+%
+%  Maurizio Vichi November 2012
+%
+% X (n X J) data matrix
+% A (J x Q) loading matrix for dimensionality reduction
+% U (n x k) membership matrix for clustering objects
+%
+% model X = UYmA' + E
+% 
+% problem: min||X-UYmA'||^2
+% 
+% being ||X||^2 = ||X-UYmA'||^2 + ||UYmA'||^2
+%
+% equivalent problem
+%
+% problem maximize ||UYmA'||^2
+% subject to
+%
+% U binary and row stochastic
+% A Orthonormal A'A=IJ
+%
+function [Urkm,Arkm, Yrkm,frkm,inrkm]=REDKM(X, K, Q, Rndstart)
+
+
+%
+% initialization
+%
+maxiter=100;
+% convergence tollerance
+eps=0.0000000001;
+
+opts.disp=0;
+VC=eye(Q);
+
+[n,J]=size(X);
+
+% centring matrix
+Jm=eye(n)-(1/n)*ones(n);
+
+% compute var-covar matrix 
+S=(1/n)*X'*Jm*X;
+
+% Standardize data
+Xs=Jm*X*diag(diag(S))^-0.5;
+
+
+st=sum(sum(Xs.^2));
+
+un=ones(n,1);
+uk=ones(K,1);
+um=ones(Q,1);
+
+
+for loop=1:Rndstart
+    U=randPU(n,K);
+    su=sum(U);
+    Xmean = diag(1./su)*U'*Xs;
+    it=0;
+    % update A
+    XX=Xs'*U*diag(1./su)*U'*Xs;
+    [A,L]=eig(XX);
+    [dL,idL]=sort(diag(L), 'descend');
+    L=diag(dL);
+    A=A(:,idL);
+    %Q=find(diag(L)>=1);
+    A=A(:,1:Q);
+    Ymean = Xmean*A;
+    Y=Xs*A;
+    f0=trace(Ymean'*U'*U*Ymean)/st*100;
+
+% iteration phase
+    fdif=2*eps;
+    while fdif > eps | it>=maxiter,
+        it=it+1;
+      % given Ymean update U
+        U=zeros(n,K);
+        for i=1:n
+            mindif=sum((Y(i,:)-Ymean(1,:)).^2);
+            posmin=1;
+            for j=2:K
+                dif=sum((Y(i,:)-Ymean(j,:)).^2);
+                if dif < mindif
+                    mindif=dif;
+                    posmin=j;
+                end 
+            end
+            U(i,posmin)=1;
+        end
+     %
+        su=sum(U);
+        while sum(su==0)>0,
+            [m,p1]=min(su);
+            [m,p2]=max(su);
+            ind=find(U(:,p2));
+            ind=ind(1:floor(su(p2)/2));
+            U(ind,p1)=1;
+            U(ind,p2)=0;
+            su=sum(U);
+        end 
+
+        % given U compute Xmean (compute centroids)
+        Xmean = diag(1./su)*U'*Xs;
+      
+        % given U and Xmean update A
+        XX=Xs'*U*diag(1./su)*U'*Xs;
+        [A,L]=eig(XX);
+        [dL,idL]=sort(diag(L), 'descend');
+        L=diag(dL);
+        A=A(:,idL);
+        %Q=find(diag(L)>=1);
+        A=A(:,1:Q);
+        Ymean = Xmean*A;
+        Y=Xs*A;
+        f=trace(Ymean'*U'*U*Ymean)/st*100;
+        fdif = f-f0;
+        
+        if fdif > eps 
+            f0=f; A0=A; 
+        else
+            break
+        end
+    end
+  disp(sprintf('REDKM: Loop=%g, Explained variance=%g, iter=%g, fdif=%g',loop,f, it,fdif))   
+       if loop==1
+            Urkm=U;
+            Arkm=A;
+            Yrkm=Xs*Arkm;
+            frkm=f;
+            looprkm=1;
+            inrkm=it;
+            fdifo=fdif;
+        end
+   if f > frkm
+       Urkm=U;
+       frkm=f;
+       Arkm=A;
+       Yrkm=Xs*Arkm;
+       looprkm=loop;
+       inrkm=it;
+       fdifo=fdif;
+   end
+end
+% sort components in descend order of variance
+% and ritate factors
+varYrkm=var(Yrkm,1);
+[c,ic]=sort(varYrkm, 'descend');
+Arkm=Arkm(:,ic);
+Yrkm=Yrkm(:,ic); 
+Arkm=rotatefactors(Arkm);
+% sort clusters of objects in descending order of cardinality
+%dwc=zeros(K,1);
+%for k=1:K
+%dwc(k)= trace((Yrkm-Urkm*pinv(Urkm)*Yrkm)'*diag(Urkm(:,k))*(Yrkm-Urkm*pinv(Urkm)*Yrkm));
+%end
+[c,ic]=sort(diag(Urkm'*Urkm), 'descend');
+Urkm=Urkm(:,ic);
+disp(sprintf('REDKM (Final): Percentage Explained variance=%g, looprkm=%g, iter=%g, fdif=%g',frkm, looprkm, inrkm,fdifo))
+
+ 

@@ -1,0 +1,21 @@
+figure
+scatter(Y(:,1),Y(:,2),'filled')
+xlabel('Factor ACP 1')
+ylabel('Factor 2')
+
+figure
+scatter(Ym50(:,1),Ym50(:,2))
+figure
+scatter(Ym30(:,1),Ym30(:,2))
+xlabel('Factor 1')
+ylabel('Factor 2')
+
+figure
+scatter(Ym20(:,1),Ym20(:,2))
+
+
+%scatter3(Ym(:,1),Ym(:,2),Ym(:,3),'filled')
+
+xlabel('Factor 1')
+ylabel('Factor 2')
+%zlabel('Factor 3')
